@@ -1,123 +1,207 @@
-# NR/LTE Handover Simulation — KTX 고속철도 (godeokhs 샘플)
+# 🚄 KTX NR/LTE 핸드오버 시뮬레이터 (샘플)
 
-field에서 녹화한 **KTX 이동 GPS 궤적** 위에서 3GPP 핸드오버 상태머신(FSM)을 돌려
-**핸드오버(HO) · 무선링크실패(RLF) · 핸드오버 실패(HOF)** 를 재현·관찰하는 시뮬레이터입니다.
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![3GPP](https://img.shields.io/badge/3GPP-TS%2038.331%20%2F%2038.300%20%2F%2038.133-orange)
+![Channel](https://img.shields.io/badge/channel-statistical%20%2B%20Sionna%20RT-green)
 
-> 이 저장소는 광명~천안아산(godeokhs) 구간 샘플 데이터로 바로 실행해볼 수 있게 구성했습니다.
-
----
-
-## 1. 사용법 (준비물)
-
-- **Python 3.10+**
-- **최소 설치 (권장, statistical 모드)** — 무거운 패키지 없이 바로 실행:
-  ```bash
-  pip install numpy pandas
-  ```
-- **전체 설치 (sionna_rt 레이트레이싱까지 재현)** — TensorFlow·Sionna 포함(무거움):
-  ```bash
-  pip install -r requirements.txt
-  ```
-
-### 포함 파일
-| 파일 | 설명 |
-|---|---|
-| `script/run_simulation.py` | 실행 진입점 |
-| `src/` | 시뮬레이터 코어 (FSM·채널·측정) — 서드파티 의존성은 **numpy·pandas** 뿐 |
-| `requirements.txt` | 전체 재현용 의존성 목록 |
-| **[A] statistical 세트** | |
-| `enb_coordinates_converted_godeokhs_sample.csv` | 기지국(gNB) 100개 샘플 (godeokhs 프레임) |
-| `ktx_ue_coordinates_godeokhs.csv` | UE 궤적 8개(=열차 8편성), 10ms (godeokhs 프레임) |
-| **[B] sionna_rt 세트** | |
-| `enb_coordinates_converted_goduck_sample.csv` | gNB 575개 샘플 (goduck **scene 프레임**) |
-| `ktx_ue_coordinates.csv` | UE 궤적 33개 (goduck **scene 프레임**) |
-| `railway_scene.xml`, `meshes/` | RT scene 지오메트리 (goduck 구역) |
+> **한 줄 요약:** 고속열차(KTX)가 달리며 **기지국을 갈아타는 과정(핸드오버)** 을,
+> 실제 주행 GPS 궤적 위에서 3GPP 표준대로 재현하는 시뮬레이터입니다.
 
 ---
 
-## 2. 어떤 핸드오버를 지원하나
+## 🤔 이게 뭔가요? (아주 쉽게)
 
-3GPP TS 38.331 / 38.300 / 38.133 기반. 서빙셀 품질로 트리거되는 측정 이벤트:
+휴대폰은 이동하면서 신호가 더 좋은 기지국으로 **자동으로 연결을 옮깁니다.** 이걸 **핸드오버(Handover, HO)** 라고 합니다.
+시속 300km로 달리는 KTX 안에서는 이 교체가 **매우 자주, 매우 빠르게** 일어나서 가끔 실패(연결 끊김)도 생깁니다.
 
-| 종류 | 이벤트 | 설명 |
-|---|---|---|
-| **Intra-frequency HO** | **A3** | 같은 주파수 이웃이 서빙보다 offset+hysteresis 이상 좋을 때 (NR 3.5G ↔ NR) |
-| **Inter-frequency HO** | **A5** | 서빙이 임계1 아래 + 다른주파수 이웃이 임계2 위 (LTE inter-freq) |
-| **Inter-RAT HO** | **B1 / B2** | 타 RAT(LTE 0.9G·1.8G) 이웃이 임계 위 — NR ↔ LTE 전환 |
-| (보조 트리거) | **A2** | 서빙 품질 열화 감지 |
+이 프로젝트는:
+1. 실제 KTX 주행 중 기록한 **GPS 위치**와 **기지국 정보**를 입력받아,
+2. 열차가 지나가는 매 순간 **어느 기지국이 가장 좋은지 계산**하고,
+3. 3GPP 표준 규칙(A3/A5/B1/B2 등)으로 **언제 핸드오버할지, 실패했는지**를 판정합니다.
 
-핸드오버 실행·실패 처리:
-- **RLF**: N310/T310(out-of-sync) → RLF, T311 복구, T304 HO 실행 타이머
-- **HOF 5종 분류** (TS 38.300 §15.5): ① Too Late ② Too Early ③ Wrong Cell ④ Ping-Pong ⑤ T304 Expiry
+> 즉 **"디지털 트윈"** — 실제 망을 컴퓨터 안에서 똑같이 돌려보는 도구입니다.
 
 ---
 
-## 3. 어떻게 수행하나 (순서)
+## 📊 전체 흐름
 
-### Step 1 — 설치
-```bash
-pip install numpy pandas
+```mermaid
+flowchart TB
+    subgraph IN["입력 데이터"]
+        G["기지국 CSV<br/>위치·안테나·주파수·PCI"]
+        U["UE 이동궤적 CSV<br/>field GPS 를 x,y,z 로"]
+    end
+    G --> SIM
+    U --> SIM
+    SIM["run_simulation.py<br/>매 10~40ms 스텝 반복"]
+    SIM --> CH{"채널 모드 선택"}
+    CH -->|statistical| ST["TR 38.901 통계식<br/>RSRP·SINR 계산<br/>(numpy·pandas)"]
+    CH -->|sionna_rt| RT["레이트레이싱<br/>scene + meshes<br/>(Sionna·TF)"]
+    ST --> FSM
+    RT --> FSM
+    FSM["3GPP 핸드오버 FSM<br/>A3·A5·B1·B2 측정<br/>RLF·HOF 판정"]
+    FSM --> OUT["결과 파일<br/>events.csv · detailed_log · report"]
+
+    style IN fill:#e1f5ff,stroke:#0366d6
+    style SIM fill:#fff3cd,stroke:#d39e00
+    style FSM fill:#d4edda,stroke:#28a745
+    style OUT fill:#f8d7da,stroke:#dc3545
 ```
 
-### Step 2 — 실행 (statistical 모드)
+---
+
+## ⚡ 30초 빠른 시작
+
 ```bash
+# 1) 최소 설치 (statistical 모드는 이 두 개면 끝)
+pip install numpy pandas
+
+# 2) 실행
 python script/run_simulation.py --channel-model statistical \
   --gnb-csv enb_coordinates_converted_godeokhs_sample.csv \
   --ue-csv  ktx_ue_coordinates_godeokhs.csv \
-  --ue-subset 0 --duration 60 \
-  --output-dir out
-```
-- `--ue-subset` : 어느 UE(열차)를 볼지. **0~7** (파일당 1편성) 중 선택. 콤마로 여러 개 가능.
-- `--duration`  : 몇 초 구간을 돌릴지 (초). 생략 시 전체 궤적.
+  --ue-subset 0 --duration 60 --output-dir out
 
-### Step 3 — 결과 확인 (`out/`)
-| 파일 | 내용 |
-|---|---|
-| `events.csv` | HO_START/COMPLETE, RLF, 재연결, HOF 이벤트 시각 로그 |
-| `detailed_log_ue0.csv` | 매 틱 RSRP/SINR/RSRQ, top1~3 이웃, FSM 상태 |
-| `simulation_report.txt` | 요약 통계 + HOF 분류 결과 |
+# 3) 결과 보기
+ls out/            # events.csv · detailed_log_ue0.csv · simulation_report.txt
+```
+
+> [!TIP]
+> `--ue-subset` 은 **어느 열차(0~7)** 를 볼지, `--duration` 은 **몇 초** 돌릴지입니다.
+> 처음이면 위 명령 그대로 실행해 보세요. TensorFlow·Sionna 설치 없이 바로 돕니다.
 
 ---
 
-## 채널 모드 2가지 — **세트를 섞지 마세요**
+## 📡 지원하는 핸드오버
 
-각 모드는 **좌표 프레임이 맞는 데이터 세트**를 써야 합니다.
+핸드오버는 **"측정 이벤트"** 라는 조건이 만족되면 일어납니다. 각 이벤트는 3GPP 표준(TS 38.331)에 정의돼 있습니다.
 
-| 모드 | 채널 | 필요 | 세트 |
-|---|---|---|---|
-| **`statistical`** (권장·가벼움) | 3GPP TR 38.901 통계식 | numpy·pandas | **[A]** godeokhs (scene 불필요) |
-| `sionna_rt` | 레이트레이싱 | Sionna+TF + scene + meshes | **[B]** goduck (scene 정합) |
+| 이벤트 | 쉬운 뜻 | 종류 |
+|:---:|---|---|
+| **A3** | "옆 기지국이 지금보다 훨씬 좋아졌다" | 같은 주파수 이동 (NR↔NR) |
+| **A5** | "지금 기지국은 나빠졌고, 다른 주파수 기지국은 괜찮다" | 다른 주파수 이동 |
+| **B1 / B2** | "다른 통신방식(LTE) 기지국이 충분히 좋다" | NR ↔ LTE 전환 |
+| **A2** | "지금 기지국 신호가 나빠졌다" (트리거 보조) | — |
 
-### sionna_rt 실행 (세트 B)
+핸드오버가 **실패**하면 이렇게 분류합니다:
+
+| 판정 | 뜻 |
+|---|---|
+| **RLF** (Radio Link Failure) | 신호가 끊겨 연결 실패 (T310/T311 타이머 기반) |
+| **HOF Case 1~5** | 너무 늦음 / 너무 이름 / 잘못된 셀 / 핑퐁 / 실행 타이머 만료 (TS 38.300 §15.5) |
+
+---
+
+## 📦 두 가지 데이터 세트 (섞지 마세요!)
+
+이 저장소에는 **2개의 독립 세트**가 있고, 각각 **맞는 채널 모드**가 정해져 있습니다.
+
+### 🅰️ 세트 A — `statistical` (가볍고 권장)
 ```bash
-pip install -r requirements.txt          # TensorFlow + Sionna 포함
+pip install numpy pandas
+python script/run_simulation.py --channel-model statistical \
+  --gnb-csv enb_coordinates_converted_godeokhs_sample.csv \
+  --ue-csv  ktx_ue_coordinates_godeokhs.csv \
+  --ue-subset 0 --duration 60 --output-dir out
+```
+- 광명~천안아산(godeokhs) 구간 · **UE 8편성** · 통계식 채널 · **설치 가벼움**
+
+### 🅱️ 세트 B — `sionna_rt` (레이트레이싱, 정밀)
+```bash
+pip install -r requirements.txt      # TensorFlow + Sionna 포함 (무거움)
 python script/run_simulation.py --channel-model sionna_rt \
   --scene-path railway_scene.xml \
   --gnb-csv enb_coordinates_converted_goduck_sample.csv \
   --ue-csv  ktx_ue_coordinates.csv \
   --ue-subset 0 --duration 30 --output-dir out_rt
 ```
+- goduck 구역 · **scene(건물·지형) 정합** · 실제 전파 반사까지 계산
 
-> [!WARNING] 좌표 프레임 규칙
-> - **[A] godeokhs 데이터 ↔ statistical** (scene 없음). godeokhs 데이터를 scene과 함께
->   쓰면 origin이 달라 **어긋납니다.**
-> - **[B] goduck 데이터 ↔ sionna_rt + railway_scene.xml** (같은 scene 프레임 → 정합).
-> - 즉 **A 데이터로 sionna_rt, B 데이터로 statistical** 처럼 교차하지 마세요.
-
-> [!NOTE] sionna_rt 샘플 gNB 위치는 근사값
-> `enb_coordinates_converted_goduck_sample.csv`는 익명화를 위해 실제 좌표를 **±10m 랜덤
-> 이동**했습니다. scene 규모(km) 대비 작아 데모용으론 무방하나, 정밀 RT가 필요하면
-> 실제 좌표(비공개 원본)를 써야 합니다.
+> [!WARNING]
+> **세트를 교차하지 마세요.** A 데이터(godeokhs)와 B의 scene은 **좌표 원점이 달라** 서로 어긋납니다.
+> - godeokhs 데이터 → `statistical` (scene 불필요)
+> - goduck 데이터 → `sionna_rt` + `railway_scene.xml` (좌표 일치)
 
 ---
 
-## 데이터 메모
-- **기지국 CSV (양쪽 모두 익명화)**: 실제 망 데이터를 공개 가능하도록 gnb_id 1부터 재번호,
-  좌표 ±10m·안테나 파라미터 ±10 랜덤화, PCI는 gnb당 3자리 랜덤(같은 gnb=같은 PCI),
-  `is_hsr_cell` 유지.
-  - `_godeokhs_sample.csv`: 100 gnb (godeokhs 프레임, statistical용)
-  - `_goduck_sample.csv`: 575 gnb (goduck scene 프레임, sionna_rt용 — scene 커버리지 위해 전체 유지)
-- **UE 궤적 CSV**: field GPS를 scene-local `x, y, z`(m)로 변환.
-  - `ktx_ue_coordinates_godeokhs.csv`: 광명~천안아산 8편성, WGS84→EPSG:5179→godeokhs origin,
-    10ms, GPS 노이즈 제거(실제 fix만 + 이상치 게이트 + Savitzky-Golay).
-  - `ktx_ue_coordinates.csv`: goduck scene 프레임 33 UE (기존 데이터, scene과 정합).
+## 📤 결과 파일 읽는 법 (`out/`)
+
+| 파일 | 내용 | 이런 걸 봐요 |
+|---|---|---|
+| **`events.csv`** | 사건 로그 | 핸드오버 시작/완료, RLF, 핑퐁이 **언제** 일어났나 |
+| **`detailed_log_ue0.csv`** | 매 틱 상세 | 서빙 기지국(`serving_pci`), 신호세기(`serving_rsrp`/`sinr`/`rsrq`), 이웃 top1~3, FSM 상태 |
+| **`simulation_report.txt`** | 요약 | 총 핸드오버 수, 성공/실패, RLF 수, HOF 분류 결과 |
+
+예시 (`simulation_report.txt`):
+```
+Total Handovers: 12    Successful: 11    Failed: 1    RLF Count: 1
+Case 1 - Too Late HO: 0   Case 4 - Ping-Pong: 2  ...
+```
+
+---
+
+## 📁 폴더 구조
+
+```
+.
+├── README.md                                      ← 이 문서
+├── requirements.txt                               ← 전체 재현용 (sionna_rt)
+├── script/run_simulation.py                       ← 실행 진입점
+├── src/                                            ← 시뮬레이터 코어 (numpy·pandas만 필요)
+│   ├── channel/   (statistical / sionna_rt 채널)
+│   ├── rrc/       (핸드오버 상태머신 · 측정)
+│   ├── phy/       (SINR→BLER · RLF)
+│   └── scenario/  (기지국·UE 로더)
+│
+├── enb_coordinates_converted_godeokhs_sample.csv  ← [A] 기지국 100개
+├── ktx_ue_coordinates_godeokhs.csv                ← [A] UE 궤적 8편성 (10ms)
+│
+├── enb_coordinates_converted_goduck_sample.csv    ← [B] 기지국 575개
+├── ktx_ue_coordinates.csv                         ← [B] UE 궤적 33개
+├── railway_scene.xml · railway_scene_kc.xml       ← [B] RT scene
+└── meshes/                                         ← [B] 건물·지형·선로 (.ply)
+```
+
+---
+
+## ❓ 자주 묻는 질문
+
+<details>
+<summary><b>Q. TensorFlow/Sionna 설치 안 하고 쓸 수 있나요?</b></summary>
+
+네. **`statistical` 모드(세트 A)** 는 `numpy`·`pandas` 만 있으면 됩니다. Sionna가 없으면 자동으로 통계 모드로 동작합니다.
+</details>
+
+<details>
+<summary><b>Q. sionna_rt가 "No SINR maps found" 라고 떠요.</b></summary>
+
+경고일 뿐이며 정상 동작합니다. 사전계산 맵 없이 **실시간 레이트레이싱**으로 대체됩니다.
+빠르게 하려면 `precompute_sinr_map.py`(원본 저장소)로 맵을 미리 구우면 됩니다.
+</details>
+
+<details>
+<summary><b>Q. UE(열차)가 여러 개인데 하나만 보고 싶어요.</b></summary>
+
+`--ue-subset 0` 처럼 번호를 주세요. 여러 개는 `--ue-subset 0,1,2`. 세트 A는 0~7, 세트 B는 0~32.
+</details>
+
+<details>
+<summary><b>Q. 결과가 이상해요 / 핸드오버가 안 일어나요.</b></summary>
+
+세트를 교차했는지 확인하세요(위 ⚠️). 좌표 원점이 다르면 기지국과 열차가 서로 멀어져 신호가 잡히지 않습니다.
+</details>
+
+---
+
+## 📚 참고 & 데이터 메모
+
+- **표준**: 3GPP TS 38.331 (측정·RRC) · TS 38.300 §15.5 (HOF 분류) · TS 38.133 (RLM) · TR 38.901 (채널 모델)
+- **기지국 CSV (익명화)**: 실제 망 데이터를 공개용으로 처리 — gnb_id 재번호, 좌표 ±10m·안테나 파라미터 랜덤화,
+  PCI는 기지국당 3자리 랜덤(같은 기지국=같은 PCI), `is_hsr_cell`(고속철도 셀) 유지.
+  > sionna_rt(세트 B)의 좌표는 ±10m 이동된 **근사값**입니다. 정밀 RT엔 실제 좌표가 필요합니다.
+- **UE 궤적**: field GPS → scene-local `x,y,z`(m) 변환. godeokhs 세트는 10ms 격자 + GPS 노이즈 제거
+  (실제 fix만 사용 → 이상치 게이트 → Savitzky-Golay 스무딩).
+
+---
+
+<sub>이 저장소는 **샘플/데모용**입니다. 실제 운영 파라미터·원본 좌표는 포함하지 않습니다.</sub>
