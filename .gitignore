@@ -1,0 +1,9 @@
+# outputs / caches (never commit)
+out/
+out_rt/
+output/
+output_*/
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/

@@ -1,0 +1,117 @@
+<!--
+  ⚠️ 좌표계 주의 (frame notice)
+  이 scene은 goduck 구역 좌표계(scene 프레임)로 제작되었습니다.
+  sionna_rt로 쓸 때는 같은 프레임 데이터와 짝지어야 합니다:
+    gnb-csv = enb_coordinates_converted_goduck_sample.csv
+    ue-csv  = ktx_ue_coordinates.csv
+  godeokhs 데이터(godeokhs_sample.csv, ktx_ue_coordinates_godeokhs.csv)는
+  origin이 달라 이 scene과 정합하지 않습니다(그건 statistical 모드 전용).
+  ※ goduck 샘플 gNB 좌표는 익명화로 ±10m 이동된 근사값입니다. (README.md 참고)
+-->
+<scene version="2.1.0">
+
+	<integrator type="path" id="integrator" name="integrator">
+		<integer name="max_depth" value="12"/>
+	</integrator>
+
+<!-- ITU Radio Materials -->
+
+	<bsdf type="itu-radio-material" id="itu_medium_dry_ground" name="itu_medium_dry_ground">
+		<string name="type" value="medium_dry_ground"/>
+		<float name="thickness" value="1.0"/>
+	</bsdf>
+
+	<bsdf type="itu-radio-material" id="itu_concrete" name="itu_concrete">
+		<string name="type" value="concrete"/>
+		<float name="thickness" value="0.3"/>
+	</bsdf>
+
+	<bsdf type="itu-radio-material" id="itu_brick" name="itu_brick">
+		<string name="type" value="brick"/>
+		<float name="thickness" value="0.3"/>
+	</bsdf>
+
+	<bsdf type="itu-radio-material" id="itu_wood" name="itu_wood">
+		<string name="type" value="wood"/>
+		<float name="thickness" value="0.1"/>
+	</bsdf>
+
+	<bsdf type="itu-radio-material" id="itu_metal" name="itu_metal">
+		<string name="type" value="metal"/>
+		<float name="thickness" value="0.01"/>
+	</bsdf>
+
+<!-- Geometry -->
+
+	<shape type="ply" id="mesh-Terrain" name="mesh-Terrain">
+		<string name="filename" value="meshes/Terrain.ply"/>
+		<ref id="itu_medium_dry_ground" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Buildings_itu_concrete" name="mesh-Buildings_itu_concrete">
+		<string name="filename" value="meshes/Buildings_itu_concrete.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_concrete" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Buildings_itu_brick" name="mesh-Buildings_itu_brick">
+		<string name="filename" value="meshes/Buildings_itu_brick.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_brick" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Buildings_itu_wood" name="mesh-Buildings_itu_wood">
+		<string name="filename" value="meshes/Buildings_itu_wood.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_wood" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Buildings_itu_metal" name="mesh-Buildings_itu_metal">
+		<string name="filename" value="meshes/Buildings_itu_metal.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_metal" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Railway_Lines" name="mesh-Railway_Lines">
+		<string name="filename" value="meshes/Railway_Lines.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_metal" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Railway_Tunnel" name="mesh-Railway_Tunnel">
+		<string name="filename" value="meshes/Railway_Tunnel.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_concrete" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Railway_Bridge" name="mesh-Railway_Bridge">
+		<string name="filename" value="meshes/Railway_Bridge.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_concrete" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Railway_Facility" name="mesh-Railway_Facility">
+		<string name="filename" value="meshes/Railway_Facility.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_concrete" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Railway_Station" name="mesh-Railway_Station">
+		<string name="filename" value="meshes/Railway_Station.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_concrete" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Highway" name="mesh-Highway">
+		<string name="filename" value="meshes/Highway.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_concrete" name="bsdf"/>
+	</shape>
+
+	<shape type="ply" id="mesh-Train_Tube" name="mesh-Train_Tube">
+		<string name="filename" value="meshes/Train_Tube.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="itu_metal" name="bsdf"/>
+	</shape>
+
+</scene>
